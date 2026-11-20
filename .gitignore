@@ -1,0 +1,53 @@
+## Reference and input data. Present on disk, never versioned.
+inputs/
+## The Sanjana Cas13design whole-library guide catalogues (252 MB). Source reference data
+cas13design_sanjana/
+annotations/
+references/
+data/
+results/*
+logs/*
+
+## Large or regenerable analysis artefacts, wherever they appear.
+*.sam
+*.bam
+*.ebwt
+*.fa
+*.fa.gz
+*.fasta
+*.gtf
+*.gtf.gz
+*.bed
+
+## Results: keep the small tables, figures and run manifests; drop the bulk.
+results/**/bowtie_index/
+logs/
+
+## The submitted manuscript pack. Working context only - not a public artefact, not needed
+## to reproduce anything, and ~85 MB of Illustrator sources and PDFs. Its location is
+## recorded under `paper_content` in conf/manifest.yaml.
+paper_content/
+
+## Spreadsheets are deliverables, not source. The frozen workbook stays on lustre.
+*.xlsx
+*.xlsx.bak*
+
+## OS / editor cruft
+.DS_Store
+
+## Python
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+
+## pixi
+.pixi/
+.pixi-cache/
+
+## Oracle client noise from the farm environment
+sqlnet.log
+
+## Project scratch
+.tmp/

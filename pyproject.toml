@@ -1,0 +1,49 @@
+# Tool configuration, and the pins the analysis depends on.
+#
+[tool.sgsq.tools]
+bowtie = "1.3.1"
+bedtools = "2.31.1"
+python = "3.12"
+
+[tool.sgsq.references]
+# The two GENCODE releases - v46 matched the guide-design fork and was used for
+# the genomic overlap work; the homology QC was re-run against v50.
+gencode_overlap = "v46"
+gencode_homology = "v50"
+depmap = "24Q4"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = [".", "scripts"]
+addopts = [
+    "-ra",                   # summarise all non-passing at the end
+    "--strict-markers",
+    "--import-mode=importlib",
+    "-m", "not farm",        # farm tests need LSF and the real inputs; opt in with -m farm
+]
+markers = [
+    "farm: needs LSF, the reference FASTAs and the screen inputs (not run in CI)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-include = ["*.ipynb"]
+extend-exclude = ["results", "references", "data"]
+builtins = ["display", "get_ipython"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "PTH", "RET", "SIM"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]   # asserts are the point
+"notebooks/*" = ["B018", "E402"]   # notebook display idiom + path bootstrap
+# Scripts import lib.* after extending sys.path; an editable install would remove this.
+"scripts/01_same_strand_overlap/*.py" = ["E402"]
+"scripts/02_transcriptome_homology/*.py" = ["E402"]
+"scripts/side_tasks/**" = ["E741"]

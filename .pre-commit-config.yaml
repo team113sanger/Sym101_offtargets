@@ -1,0 +1,68 @@
+# Install once per clone (both hook types):
+#   pixi run setup
+# or by hand:
+#   pre-commit install && pre-commit install --hook-type pre-push
+# Run over everything:
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Two trailing spaces in Markdown is a hard line break. Without this the hook
+        # would strip them and silently reflow the methods documents.
+        args: [--markdown-linebreak-ext=md]
+        exclude: '^(results/|references/|data/|logs/)'
+      - id: end-of-file-fixer
+        exclude: '^(results/|references/|data/|logs/)'
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-ast
+      - id: debug-statements
+      - id: check-added-large-files
+        args: [--maxkb=5120]
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Repo-specific checks, plus ruff.
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: pixi run -e dev ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff-format
+        entry: pixi run -e dev ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: nbstripout
+        name: nbstripout
+        entry: pixi run -e dev nbstripout
+        language: system
+        files: '\.ipynb$'
+      - id: nbqa-ruff
+        name: nbqa ruff
+        # --nbqa-shell: ruff is a standalone binary here, not a python module.
+        entry: pixi run -e dev nbqa ruff --nbqa-shell --fix
+        language: system
+        files: '\.ipynb$'
+      - id: pytest-unit
+        name: unit tests
+        entry: pixi run -e dev pytest
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: '^(scripts/|tests/|notebooks/|conf/|pyproject\.toml|pixi\.toml)'
+      - id: shell-syntax
+        name: bash -n
+        entry: bash -n
+        language: system
+        files: '\.sh$'

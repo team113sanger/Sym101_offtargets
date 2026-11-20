@@ -1,0 +1,60 @@
+# Lightweight CI
+
+stages:
+  - lint
+  - test
+
+variables:
+  PIXI_VERSION: "0.73.0"
+
+# Branch names follow the team convention: feature/*, hotfix/*, release/*, develop, main.
+.rules: &rules
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  - if: >-
+      $CI_COMMIT_BRANCH =~ /^feature/ ||
+      $CI_COMMIT_BRANCH =~ /^hotfix/ ||
+      $CI_COMMIT_BRANCH =~ /^release/ ||
+      $CI_COMMIT_BRANCH == "develop" ||
+      $CI_COMMIT_BRANCH == "main" ||
+      $CI_COMMIT_TAG
+
+.pixi: &pixi
+  image: ghcr.io/prefix-dev/pixi:${PIXI_VERSION}
+  cache:
+    key:
+      files:
+        - pixi.lock
+    paths:
+      - .pixi/envs
+
+shell-syntax:
+  stage: lint
+  image: bash:5
+  script:
+    - find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
+    - echo "bash -n OK"
+  rules: *rules
+
+ruff:
+  stage: lint
+  <<: *pixi
+  script:
+    - pixi run -e dev lint
+    - pixi run -e dev lint-notebooks
+  rules: *rules
+
+# The manifest, the script contracts and the notebook record.
+unit-tests:
+  stage: test
+  <<: *pixi
+  script:
+    - pixi run -e dev pytest -v
+  rules: *rules
+
+pre-commit:
+  stage: lint
+  <<: *pixi
+  script:
+    - pixi run -e dev pre-commit run --all-files --show-diff-on-failure
+  allow_failure: true
+  rules: *rules
