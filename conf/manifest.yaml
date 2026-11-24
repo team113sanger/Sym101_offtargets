@@ -1,0 +1,241 @@
+# Critical analysis config only: paths, tool pins, thresholds and I/O.
+schema_version: 1
+
+project:
+  name: symphony-guide-specificity-qc
+  screen: SYM101
+  cell_lines: [A549, NCI-H1299, NCI-H1975]
+  cell_line_aliases:
+    A549: {screen: A549, depmap_model: ACH-000681, depmap_stripped: A549}
+    NCI-H1299: {screen: H1299, depmap_model: ACH-000510, depmap_stripped: NCIH1299}
+    NCI-H1975: {screen: H1975, depmap_model: ACH-000587, depmap_stripped: NCIH1975}
+  spacer_length_nt: 23
+
+paths:
+  scratch: results
+  results: ${paths.scratch}
+  inputs: inputs
+  annotations: inputs/annotations
+  figure_source: inputs/figure_source_data
+
+tools:
+  bowtie: {version: "1.3.1", source: pixi}
+  bedtools: {version: "2.31.1", source: pixi}
+  python: {version: "3.12", source: pixi}
+  statsmodels: {version: ">=0.14", source: pixi}
+
+references:
+  gencode_v46_gtf:
+    path: inputs/annotations/genes.gtf
+    release: v46
+    assembly: GRCh38
+    used_by: [step_01]
+  gencode_v50_pc_lncRNA_fasta:
+    path: inputs/gencode_v50/gencode.v50.pc_lncRNA_transcripts.fa
+    release: v50
+    assembly: GRCh38
+    used_by: [step_02]
+  grch38_primary_fasta:
+    path: inputs/genome/GRCh38.primary_assembly.genome.fa
+    assembly: GRCh38
+    used_by: []
+    status: optional
+  depmap_24Q4:
+    path: inputs/references/depmap/24Q4
+    release: Public 24Q4
+    figshare_article: "27993248"
+    files:
+      CRISPRGeneEffect.csv: {figshare_file_id: "51064667", md5: 6edf7ade09b9b34199210b559d4745d3}
+      Model.csv: {figshare_file_id: "51065297", md5: 675210d17675f3517b0ce39a3c274f16}
+    used_by: [step_03]
+    status: release_of_record
+  depmap_26Q3:
+    path: inputs/references/depmap/snapshot_2026-10-22
+    release: Public 26Q3
+    used_by: [robustness_depmap_26Q3]
+    status: robustness_only
+
+steps:
+
+  step_01:
+    title: Same-strand lncRNA / protein-coding overlap
+    status: published
+    scripts:
+      - scripts/01_same_strand_overlap/prepare_beds.py
+      - scripts/01_same_strand_overlap/run_lncrna_pc_overlap.py
+      - scripts/01_same_strand_overlap/run_guide_specificity.py
+      - scripts/01_same_strand_overlap/junction_split_pc_overlap.py
+      - scripts/01_same_strand_overlap/summarize_confounders.py
+      - scripts/01_same_strand_overlap/plot_overlap_summary.py
+    inputs:
+      guide_table: inputs/Supp_table_1_.csv
+      guide_table_filter: transcript_biotype == "lncRNA"
+      annotation: ${references.gencode_v46_gtf.path}
+      derived_beds:
+        - inputs/annotations/screen_lncrna_transcripts.bed
+        - inputs/annotations/protein_coding_genes.bed
+        - inputs/annotations/protein_coding_exons.bed
+        - inputs/annotations/protein_coding_cds.bed
+    parameters:
+      tool: bedtools intersect
+      strandedness: -s
+      report: -wa -wb
+      coordinates: BED6, 0-based half-open
+      min_frac_of_lncRNA: [0.0, 0.1, 0.25, 0.5, 0.8]
+      guide_classes:
+        - lncrna_specific
+        - overlaps_pc_intron_only
+        - overlaps_pc_exon_not_cds
+        - overlaps_pc_cds
+        - junction_spanning_unmapped
+        - unmapped
+    outputs:
+      overview: ${paths.results}/01_same_strand_overlap/lncrna_pc_overlap/lncrna_pc_overlap_overview.tsv
+      pairwise_fractions: ${paths.results}/01_same_strand_overlap/lncrna_pc_overlap/lncrna_pc_overlap_fractions.tsv
+      confounder_summary: ${paths.results}/01_same_strand_overlap/lncrna_confounder_summary.tsv
+      guide_coords: ${paths.results}/01_same_strand_overlap/guide_specificity/lncrna_guide_genomic_coords.tsv
+
+  step_02:
+    title: Transcriptome-wide sequence homology
+    status: published
+    scripts:
+      - scripts/02_transcriptome_homology/export_spacers_for_offtarget.py
+      - scripts/02_transcriptome_homology/bowtie_transcriptome_offtargets.py
+      - scripts/02_transcriptome_homology/rebuild_share_freeze_inputs.py
+      - scripts/02_transcriptome_homology/filter_bowtie_same_symbol_ots.py
+    inputs:
+      spacer_fasta: inputs/offtarget_rerun/sym101_spacers.fa
+      spacer_table: inputs/offtarget_rerun/sym101_spacers.tsv
+      reference_fasta: ${references.gencode_v50_pc_lncRNA_fasta.path}
+      bowtie_index: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/bowtie_index/gencode.v50.pc_lncRNA
+    parameters:
+      command: bowtie --nofw -a --threads 8 -n 2 -f <index> <spacers.fa> -S <out.sam> --un <unaligned.fa>
+      max_mismatches: 2
+      seed_region_nt: [15, 21]
+      fail_rule: ">=1 non-self gene hit at <=2 mismatches"
+      counting_unit: unique_genes
+      self_hit_exclusion: [intended_ENSG, same_symbol_different_ENSG]
+    outputs:
+      sam_dir: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50
+      sam: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_vs_gencode_v50.sam
+      guide_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_spacers_bowtie_gencode_v50.excl_same_symbol.tsv
+      site_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_spacers_bowtie_gencode_v50.sites.tsv.gz
+      gene_to_gene: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/gene_to_gene_offtargets_excl_same_symbol.tsv
+      qc_summary: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/qc_summary.json
+
+  step_02b:
+    title: Hamming / splice-aware supporting QC
+    status: supporting
+    scripts:
+      - scripts/02_transcriptome_homology/filter_fasta_by_biotype.py
+      - scripts/02_transcriptome_homology/run_transcriptome_mismatch_qc.py
+      - scripts/02_transcriptome_homology/compare_splice_vs_nonsplice_offtargets.py
+    outputs:
+      - ${paths.results}/02_transcriptome_homology/transcriptome_mismatch_qc_v50
+      - ${paths.results}/02_transcriptome_homology/transcriptome_mismatch_qc_v50_liang_biotypes
+      - ${paths.results}/02_transcriptome_homology/transcriptome_mismatch_qc
+
+  step_03:
+    title: Fitness concordance and off-target partner essentiality
+    status: published
+    scripts:
+      - scripts/03_fitness_concordance/ot_fitness_concordance.py
+      - scripts/03_fitness_concordance/ot_library_wide_mixed_model.py
+      - scripts/03_fitness_concordance/plot_fracOT_beta_DepMap_Chronos.py
+      - scripts/03_fitness_concordance/plot_within_gene_lncRNA_delta_medianLFC_with_guide_dots.py
+    inputs:
+      ot_freeze: ${steps.step_02.outputs.guide_level}
+      ot_sites: ${steps.step_02.outputs.site_level}
+      gene_to_gene: ${steps.step_02.outputs.gene_to_gene}
+      guide_abundances: ${paths.figure_source}/Fig1c_source_data.csv
+      mageck_mle: ${paths.figure_source}/Supplementary_Table_3_SYM101_MAGeCK_MLE.csv
+      depmap_gene_effect: ${references.depmap_24Q4.path}/CRISPRGeneEffect.csv
+      depmap_models: ${references.depmap_24Q4.path}/Model.csv
+    parameters:
+      guide_lfc: mean(TP6) - mean(TP1)
+      timepoint: TP6
+      beta_hit_threshold: -0.5
+      wald_fdr_threshold: 0.01
+      frac_ot_enrichment_cut: 0.5
+      chronos_essential: -0.5
+      within_gene_statistic: median
+      within_gene_min_ot_guides: 3
+      within_gene_min_clean_guides: 2
+      library_wide_model: "LFC ~ is_ot + C(Gene) + C(line)"
+    outputs:
+      dir: ${paths.results}/03_fitness_concordance/ot_fitness_concordance
+      gene_level: gene_fracOT_vs_MLE_beta.tsv
+      hit_enrichment: hit_enrichment_vs_fracOT.tsv
+      within_gene: within_gene_OT_vs_noOT_LFC_median_lncRNA.tsv
+      library_wide: [library_wide_OT_effect_summary.tsv, library_wide_OT_OLS_full.tsv, library_wide_OT_within_gene.tsv]
+      depmap_partners: lncRNA_OT_partners_DepMap_Chronos_24Q4.tsv
+      figure: plots/figure_fracOT_beta_DepMap_Chronos.{png,pdf}
+
+  # Same Chronos lookup as step_03; only --release changes (24Q4 vs 26Q3).
+  robustness_depmap_26Q3:
+    title: OT partners rescored on DepMap 26Q3
+    status: robustness
+    scripts:
+      - scripts/03_fitness_concordance/depmap_partner_chronos.py
+    inputs:
+      frozen_partner_table: ${steps.step_03.outputs.dir}/${steps.step_03.outputs.depmap_partners}
+      depmap_gene_effect: ${references.depmap_26Q3.path}/CRISPRGeneEffect.csv
+      depmap_models: ${references.depmap_26Q3.path}/Model.csv
+    parameters:
+      release: 26Q3
+      chronos_essential: -0.5
+    outputs:
+      dir: ${paths.results}/03_fitness_concordance/depmap_release_check
+      table: OT_partners_DepMap_Chronos_26Q3_vs_24Q4.tsv
+
+  robustness_wobble_rna_space:
+    title: G·U wobble re-score of Bowtie alignments
+    status: robustness
+    scripts:
+      - scripts/02_transcriptome_homology/wobble_rescore_sym101.py
+    inputs:
+      sam: ${steps.step_02.outputs.sam}
+      guide_table: ${steps.step_02.outputs.guide_level}
+    parameters:
+      spacer_len: 23
+      seed_spacer_positions: [15, 21]
+    outputs:
+      dir: ${paths.results}/02_transcriptome_homology/wobble_rna_space
+      per_guide: guide_offtarget_wobble_sym101.tsv
+      gene_pairs: offtarget_gene_pairs_wobble_sym101.tsv.gz
+
+  supplementary_workbook_v5:
+    title: Supplementary workbook builder
+    status: supplementary
+    scripts:
+      - scripts/supplementary/update_supplementary_workbook.py
+      - scripts/supplementary/validate_methods_against_workbook.py
+    inputs:
+      mean_based_within_gene: ${paths.results}/03_fitness_concordance/ot_fitness_concordance/within_gene_OT_vs_clean_LFC_lncRNA.tsv
+    outputs:
+      dir: ${paths.results}/supplementary
+      workbook: sym101_spacers_off_targets_v5.xlsx
+
+side_tasks:
+  fig1f_replot:
+    title: Fig 1f MAGeCK MLE volcano
+    status: unrelated_side_task
+    scripts:
+      - scripts/side_tasks/fig1f_replot/plot_fig1f_mle_volcano_biotype.py
+      - scripts/side_tasks/fig1f_replot/plot_fig1f_mle_volcano.py
+    inputs:
+      mageck_mle: ${paths.figure_source}/Supplementary_Table_3_SYM101_MAGeCK_MLE.csv
+      fig1f_source: ${paths.figure_source}/Fig1f_source_data.csv
+    parameters:
+      beta_hit_threshold: -0.5
+      require_wald_fdr: false
+    outputs:
+      dir: ${paths.figure_source}
+      figure: Fig1f_MAGeCK_MLE_beta_vs_waldFDR_biotype.{png,pdf}
+
+notebooks:
+  - {path: notebooks/00_manifest_and_provenance.ipynb, documents: all}
+  - {path: notebooks/01_same_strand_overlap.ipynb, documents: step_01}
+  - {path: notebooks/02_transcriptome_homology.ipynb, documents: [step_02, step_02b]}
+  - {path: notebooks/03_fitness_concordance.ipynb, documents: step_03}
+  - {path: notebooks/04_validation_and_robustness.ipynb, documents: [robustness_depmap_26Q3, robustness_wobble_rna_space]}
