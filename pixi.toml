@@ -22,6 +22,11 @@ openpyxl = ">=3.1"
 pyyaml = ">=6.0"
 bowtie = "1.3.1.*"
 bedtools = "2.31.1.*"
+adjusttext = ">=1.3"
+
+# The shared library is installed editable
+[pypi-dependencies]
+sym101-qc = { path = ".", editable = true }
 
 [feature.dev.dependencies]
 pytest = ">=8.0"
@@ -37,16 +42,17 @@ default = { features = [], solve-group = "main" }
 dev = { features = ["dev"], solve-group = "main" }
 
 [tasks]
-setup = "pixi install -e dev && pixi run -e dev pre-commit install && pixi run -e dev pre-commit install --hook-type pre-push"
-shell-syntax = "bash -c 'find scripts -name \"*.sh\" -print0 | xargs -0 -n1 bash -n && echo OK'"
-versions = "python scripts/lib/report_versions.py"
+setup = { cmd = "pixi install -e dev && pixi run -e dev pre-commit install && pixi run -e dev pre-commit install --hook-type pre-push", description = "Install env + git hooks" }
+shell-syntax = { cmd = "bash -c 'find scripts -name \"*.sh\" -print0 | xargs -0 -n1 bash -n && echo OK'", description = "bash -n on scripts/**/*.sh" }
+versions = { cmd = "sym101-versions", description = "Print pinned tool versions" }
+help = { cmd = "bash -c 'pixi task list; echo; echo \"Streams: pixi run step-01|step-02|step-03|pipeline\"; echo \"Farm:    pixi run submit -- --list\"; echo \"One job: pixi run submit -- step_01_prepare_beds\"; echo \"Script:  pixi run python scripts/01_same_strand_overlap/prepare_beds.py --help\"'", description = "How to run analysis via pixi" }
 
-# Analysis streams
-submit = "bash scripts/jobs/submit.sh"
-step-01 = "python scripts/jobs/submit.py stream_01 --local"
-step-02 = "python scripts/jobs/submit.py stream_02 --local"
-step-03 = "python scripts/jobs/submit.py stream_03 --local"
-pipeline = { depends-on = ["step-01", "step-02", "step-03"] }
+# Analysis streams (pixi env on PATH: python, bowtie, bedtools)
+submit = { cmd = "bash scripts/jobs/submit.sh", description = "LSF/local job runner (pass args after --)" }
+step-01 = { cmd = "python scripts/jobs/submit.py stream_01 --local", description = "Run stream 01 locally, in order" }
+step-02 = { cmd = "python scripts/jobs/submit.py stream_02 --local", description = "Run stream 02 locally (Bowtie — use a compute node)" }
+step-03 = { cmd = "python scripts/jobs/submit.py stream_03 --local", description = "Run stream 03 locally, in order" }
+pipeline = { depends-on = ["step-01", "step-02", "step-03"], description = "step-01 → step-02 → step-03" }
 
 # Everything below needs pytest or ruff, which only the dev feature provides.
 [feature.dev.tasks]
@@ -57,10 +63,14 @@ test-verbose = "pytest -sv"
 check-manifest = "pytest tests/unit/test_manifest.py -v"    # conf/manifest.yaml is complete and self-consistent
 check-scripts = "pytest tests/unit/test_script_contracts.py -v"  # usage, strict mode, no hardcoded user paths
 check-notebooks = "pytest tests/unit/test_notebooks.py -v"  # notebooks parse, are output-stripped, cite the manifest
-lint = "ruff check scripts tests"
+lint = "ruff check src scripts tests"
+# Style: inspect first, then apply. `style-check` only reports (safe to run any time);
+# `style-fix` rewrites files, so run it on a clean tree you can diff.
+style-check = { cmd = "ruff check src scripts tests notebooks --statistics && ruff format --check src scripts tests notebooks", description = "Report style and naming issues; changes nothing" }
+style-fix = { cmd = "ruff check src scripts tests notebooks --fix && ruff format src scripts tests notebooks", description = "Apply the fixes style-check reported" }
 # --nbqa-shell: ruff comes from conda-forge as a standalone binary, not an importable
 # module, so without it nbqa tries `python -m ruff` and reports ruff as not installed.
 lint-notebooks = "nbqa ruff notebooks --nbqa-shell"
-fmt = "ruff format scripts tests"
+fmt = "ruff format src scripts tests"
 lab = "jupyter lab --no-browser --ip 0.0.0.0"
 check = { depends-on = ["lint", "lint-notebooks", "shell-syntax", "test"] }
