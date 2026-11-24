@@ -1,5 +1,30 @@
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[project]
+name = "sym101-qc"
+version = "1.0.0"
+description = "Guide-specificity QC for the Symphony Cas13d lncRNA/protein-coding library (SYM101)"
+requires-python = ">=3.12"
+# Runtime dependencies are solved by pixi (see pixi.toml); listed here so the package is
+# installable on its own and so the versions are visible in one place.
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "matplotlib>=3.8",
+    "openpyxl>=3.1",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+sym101-versions = "sym101_qc.report_versions:main"
+
+[tool.uv.build-backend]
+module-root = "src"
+
 # Tool configuration, and the pins the analysis depends on.
-#
 [tool.sgsq.tools]
 bowtie = "1.3.1"
 bedtools = "2.31.1"
@@ -35,15 +60,14 @@ builtins = ["display", "get_ipython"]
 force-exclude = true
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "PTH", "RET", "SIM"]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "PTH", "RET", "SIM", "N"]  # N = pep8-naming
 ignore = [
     "E501",   # line length is handled by the formatter
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]   # asserts are the point
-"notebooks/*" = ["B018", "E402"]   # notebook display idiom + path bootstrap
-# Scripts import lib.* after extending sys.path; an editable install would remove this.
-"scripts/01_same_strand_overlap/*.py" = ["E402"]
-"scripts/02_transcriptome_homology/*.py" = ["E402"]
-"scripts/side_tasks/**" = ["E741"]
+"tests/*" = ["S101"]                                  # asserts are the point
+"notebooks/*" = ["B018", "E402"]                      # display idiom + sys.path bootstrap
+"scripts/**" = ["E402"]                               # sys.path bootstrap before local imports
+"notebooks/legacy_notebooks/*" = ["B007", "F401", "I001", "PTH123", "SIM115"]
+"scripts/03_fitness_concordance/ot_library_wide_mixed_model.py" = ["N803", "N806"]
