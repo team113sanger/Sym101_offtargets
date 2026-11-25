@@ -1,0 +1,151 @@
+# HPC / LSF
+#   bash scripts/jobs/submit.sh --list
+#   bash scripts/jobs/submit.sh step_01_prepare_beds            # dry run
+#   bash scripts/jobs/submit.sh step_01_prepare_beds --submit   # bsub
+#   bash scripts/jobs/submit.sh stream_01 --submit              # ordered chain
+#
+# outdir values are repo-relative under results/.
+
+default_profile: standard
+
+profiles:
+  small:    { queue: short,  cores: 1, mem_mb: 8000 }
+  standard: { queue: normal, cores: 2, mem_mb: 16000 }
+  big:      { queue: normal, cores: 4, mem_mb: 32000 }
+  huge:     { queue: long,   cores: 8, mem_mb: 48000 }
+
+# Ordered chains for submit.sh
+streams:
+  stream_01:
+    - step_01_prepare_beds
+    - step_01_lncrna_pc_overlap
+    - step_01_guide_specificity
+    - step_01_junction_split_pc_overlap
+    - step_01_summarize_confounders
+    - step_01_plot_overlap_summary
+  stream_02:
+    - step_02_export_guides
+    - step_02_bowtie_offtargets
+    - step_02_filter_same_symbol
+  stream_03:
+    - step_03_ot_fitness_concordance
+    - step_03_ot_library_wide_mixed_model
+    - step_03_depmap_partners_24Q4
+    - step_03_plot_fracOT_beta_DepMap_Chronos
+    - step_03_plot_within_gene_median
+
+jobs:
+
+  # ---- stream 01: same-strand lncRNA / PC overlap -------------------------
+  step_01_prepare_beds:
+    outdir: results/01_same_strand_overlap
+    profile: standard
+    purpose: Build screen lncRNA and protein-coding BED files from GENCODE v46 + Supp Table 1.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/prepare_beds.py
+
+  step_01_lncrna_pc_overlap:
+    outdir: results/01_same_strand_overlap
+    profile: standard
+    purpose: Same-strand bedtools intersect of screen lncRNAs vs PC gene bodies.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/run_lncrna_pc_overlap.py
+
+  step_01_guide_specificity:
+    outdir: results/01_same_strand_overlap
+    profile: standard
+    purpose: Map lncRNA guides to the genome and assign PC-overlap specificity classes.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/run_guide_specificity.py
+
+  step_01_junction_split_pc_overlap:
+    outdir: results/01_same_strand_overlap
+    profile: standard
+    purpose: Split junction-spanning guides into exon segments and re-test PC overlap.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/junction_split_pc_overlap.py
+
+  step_01_summarize_confounders:
+    outdir: results/01_same_strand_overlap
+    profile: small
+    purpose: Risk labels for the four lncRNA–PC overlap pairs.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/summarize_confounders.py
+
+  step_01_plot_overlap_summary:
+    outdir: results/01_same_strand_overlap
+    profile: small
+    purpose: Stream-01 summary figures.
+    cmd: pixi run --frozen python scripts/01_same_strand_overlap/plot_overlap_summary.py
+
+  # ---- stream 02: transcriptome homology (Bowtie v50) ---------------------
+  step_02_export_guides:
+    outdir: results/02_transcriptome_homology
+    profile: small
+    purpose: Write the 6,225 Sym101 spacers as TSV/FASTA for the off-target search.
+    cmd: pixi run --frozen python scripts/02_transcriptome_homology/export_spacers_for_offtarget.py
+
+  step_02_bowtie_offtargets:
+    outdir: results/02_transcriptome_homology
+    profile: huge
+    purpose: >-
+      Bowtie --nofw -a -n 2 vs GENCODE v50 spliced pc+lncRNA transcripts, then
+      summarise gene-level off-targets (published stream 02 runner).
+    cmd: bash scripts/jobs/run_v50_bowtie_offtargets.sh
+
+  step_02_filter_same_symbol:
+    outdir: results/02_transcriptome_homology
+    profile: standard
+    purpose: Drop same-symbol/different-ENSG hits and rebuild the share freeze tables.
+    cmd: pixi run --frozen python scripts/02_transcriptome_homology/filter_bowtie_same_symbol_ots.py
+
+  # ---- stream 03: fitness concordance -------------------------------------
+  step_03_ot_fitness_concordance:
+    outdir: results/03_fitness_concordance
+    profile: big
+    purpose: Within-gene LFC contrasts, Fisher enrichment, and DepMap partner essentiality.
+    cmd: pixi run --frozen python scripts/03_fitness_concordance/ot_fitness_concordance.py
+
+  step_03_ot_library_wide_mixed_model:
+    outdir: results/03_fitness_concordance
+    profile: standard
+    purpose: Library-wide LFC ~ is_ot + gene + line (OLS / MixedLM).
+    cmd: pixi run --frozen python scripts/03_fitness_concordance/ot_library_wide_mixed_model.py
+
+  step_03_depmap_partners_24Q4:
+    outdir: results/03_fitness_concordance/ot_fitness_concordance
+    profile: standard
+    purpose: Chronos lookup for OT partners (DepMap 24Q4, release of record).
+    cmd: >-
+      pixi run --frozen python scripts/03_fitness_concordance/depmap_partner_chronos.py
+      --release 24Q4
+
+  step_03_plot_fracOT_beta_DepMap_Chronos:
+    outdir: results/03_fitness_concordance
+    profile: small
+    purpose: Published fracOT vs beta + DepMap Chronos figure (Note Fig. 2).
+    cmd: pixi run --frozen python scripts/03_fitness_concordance/plot_fracOT_beta_DepMap_Chronos.py
+
+  step_03_plot_within_gene_median:
+    outdir: results/03_fitness_concordance
+    profile: small
+    purpose: Median-based within-gene delta bars with guide dots.
+    cmd: >-
+      pixi run --frozen python
+      scripts/03_fitness_concordance/plot_within_gene_lncRNA_delta_medianLFC_with_guide_dots.py
+
+  # ---- optional (not in default stream chains) ----------------------------
+  robustness_depmap_26Q3:
+    outdir: results/03_fitness_concordance/depmap_release_check
+    profile: standard
+    purpose: Same Chronos lookup as step_03_depmap_partners_24Q4, DepMap 26Q3.
+    cmd: >-
+      pixi run --frozen python scripts/03_fitness_concordance/depmap_partner_chronos.py
+      --release 26Q3
+
+  robustness_wobble_rna_space:
+    outdir: results/02_transcriptome_homology/wobble_rna_space
+    profile: big
+    purpose: Re-score Bowtie SAM treating G.U as a match (RNA space).
+    cmd: pixi run --frozen python scripts/02_transcriptome_homology/wobble_rescore_sym101.py
+
+  supplementary_workbook_v5:
+    outdir: results/supplementary
+    profile: small
+    purpose: Build the corrected supplementary workbook.
+    cmd: pixi run --frozen python scripts/supplementary/update_supplementary_workbook.py
