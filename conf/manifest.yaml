@@ -99,13 +99,13 @@ steps:
     title: Transcriptome-wide sequence homology
     status: published
     scripts:
-      - scripts/02_transcriptome_homology/export_spacers_for_offtarget.py
+      - scripts/02_transcriptome_homology/export_guides_for_offtarget.py
       - scripts/02_transcriptome_homology/bowtie_transcriptome_offtargets.py
       - scripts/02_transcriptome_homology/rebuild_share_freeze_inputs.py
       - scripts/02_transcriptome_homology/filter_bowtie_same_symbol_ots.py
     inputs:
-      spacer_fasta: inputs/offtarget_rerun/sym101_spacers.fa
-      spacer_table: inputs/offtarget_rerun/sym101_spacers.tsv
+      guide_fasta: inputs/offtarget_rerun/sym101_guides.fa
+      guide_table: inputs/offtarget_rerun/sym101_guides.tsv
       reference_fasta: ${references.gencode_v50_pc_lncRNA_fasta.path}
       bowtie_index: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/bowtie_index/gencode.v50.pc_lncRNA
     parameters:
@@ -118,8 +118,8 @@ steps:
     outputs:
       sam_dir: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50
       sam: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_vs_gencode_v50.sam
-      guide_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_spacers_bowtie_gencode_v50.excl_same_symbol.tsv
-      site_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_spacers_bowtie_gencode_v50.sites.tsv.gz
+      guide_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_guides_bowtie_gencode_v50.excl_same_symbol.tsv
+      site_level: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/sym101_guides_bowtie_gencode_v50.sites.tsv.gz
       gene_to_gene: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/gene_to_gene_offtargets_excl_same_symbol.tsv
       qc_summary: ${paths.results}/02_transcriptome_homology/transcriptome_bowtie_qc_v50/qc_summary.json
 

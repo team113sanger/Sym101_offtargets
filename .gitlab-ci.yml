@@ -31,16 +31,35 @@ shell-syntax:
   stage: lint
   image: bash:5
   script:
-    - find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
-    - echo "bash -n OK"
+    # Skip gracefully when scripts/ has not been committed yet.
+    - |
+      if [ -d scripts ]; then
+        find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
+        echo "bash -n OK"
+      else
+        echo "scripts/ not present in this commit — skipping shell-syntax"
+      fi
   rules: *rules
 
 ruff:
   stage: lint
   <<: *pixi
   script:
-    - pixi run -e dev lint
-    - pixi run -e dev lint-notebooks
+    # Only lint directories that exist; early infrastructure commits lack src/ scripts/ tests/.
+    - |
+      PATHS=""
+      for d in src scripts tests; do [ -d "$d" ] && PATHS="$PATHS $d"; done
+      if [ -n "$PATHS" ]; then
+        pixi run -e dev ruff check $PATHS
+      else
+        echo "No Python source directories present — skipping ruff"
+      fi
+    - |
+      if [ -d notebooks ]; then
+        pixi run -e dev lint-notebooks
+      else
+        echo "notebooks/ not present — skipping nbqa"
+      fi
   rules: *rules
 
 # The manifest, the script contracts and the notebook record.
